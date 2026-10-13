@@ -1,0 +1,21 @@
+name: Modularize existing presentation
+on:
+  push:
+    branches: [main]
+    paths: ['tools/migrate_legacy.py', '.github/workflows/modularize.yml']
+permissions:
+  contents: write
+jobs:
+  modularize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract approved presentation into editable files
+        run: python3 tools/migrate_legacy.py index.html .
+      - name: Commit modular presentation
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add index.html demo.html css js data fonts images vendor asset-manifest.json
+          git commit -m 'Separate presentation, demo, scripts, styles and shared assets'
+          git push origin HEAD:main
