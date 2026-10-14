@@ -19,6 +19,7 @@
       meta: card.querySelector('small').textContent,
       title: card.querySelector('h3').textContent,
       paragraphs: Array.from(card.querySelectorAll('p:not(.cue)'), p => p.textContent),
+      emphasis: Array.from(card.querySelectorAll('p:not(.cue)'), p => Array.from(p.querySelectorAll('strong'), element => element.textContent)),
       cue: card.querySelector('.cue')?.textContent || ''
     }));
     cards.forEach((card, i) => { card.end = (cards[i + 1]?.start ?? slides.length) - 1; });
@@ -114,8 +115,19 @@
       const title = document.createElement('h2');
       title.textContent = card.title;
       article.append(meta, title);
-      card.paragraphs.forEach(text => {
-        const p = document.createElement('p'); p.textContent = text; article.append(p);
+      card.paragraphs.forEach((text, paragraphIndex) => {
+        const p = document.createElement('p');
+        const emphasis = card.emphasis?.[paragraphIndex] || [];
+        let offset = 0;
+        emphasis.forEach(phrase => {
+          const at = text.indexOf(phrase, offset);
+          if (at < 0) return;
+          p.append(document.createTextNode(text.slice(offset, at)));
+          const strong = document.createElement('strong'); strong.textContent = phrase; p.append(strong);
+          offset = at + phrase.length;
+        });
+        p.append(document.createTextNode(text.slice(offset)));
+        article.append(p);
       });
       if (card.cue) {
         const cue = document.createElement('p'); cue.className = 'cue'; cue.textContent = card.cue; article.append(cue);
