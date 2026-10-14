@@ -1,15 +1,24 @@
 /* Presentation ending: connected ANOVA, planned MCP extension, quick extraction and field language. */
 .ending-extension h2,.ending-language h2{font-size:54px;line-height:1.3}
-.ending-extension .extension-status-flow{display:grid;grid-template-columns:1fr 1fr;gap:52px;margin-top:44px}
-.extension-state{min-height:220px;border-top:1px solid #3a586c;padding-top:18px}
-.extension-state small{display:block;color:#a4becf;font-size:16px;margin-bottom:27px}
+.ending-extension .extension-status-flow{display:grid;grid-template-columns:330px 1fr;gap:56px;margin-top:35px}
+.extension-state{border-top:1px solid #3a586c;padding-top:17px}
+.extension-state small{display:block;color:#a4becf;font-size:16px;margin-bottom:17px}
 .extension-state.connected small{color:#58ead0}
-.extension-steps{display:flex;align-items:center;gap:17px;white-space:nowrap}
-.extension-steps strong{font-size:29px;line-height:1.2;letter-spacing:-.045em}
+.extension-steps{display:flex;align-items:center;gap:13px;white-space:nowrap;height:162px}
+.extension-steps strong{font-size:25px;line-height:1.2;letter-spacing:-.045em}
 .extension-steps span{font-size:27px;color:#58ead0}
-.extension-state.future .extension-steps{gap:11px}
-.extension-state.future .extension-steps strong{font-size:24px}
-.extension-state p{font-size:20px;line-height:1.65;color:#b3cbd9;margin-top:23px}
+.extension-state p{font-size:19px;line-height:1.6;color:#b3cbd9;margin-top:14px}
+.multi-api-flow{height:162px;display:grid;grid-template-columns:202px 70px 112px 48px 1fr;align-items:center}
+.api-stack{display:grid;gap:9px}
+.api-stack>div{height:48px;display:flex;align-items:center;justify-content:center;border:1px solid #3e6876;border-radius:8px;background:#0c293c;font-size:21px;color:#d4e9f0;letter-spacing:-.035em}
+.api-merge{width:70px;height:162px;display:block;overflow:visible}
+.api-hub{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:103px;border:1px solid #58ead0;border-radius:12px;background:#0c343c;gap:9px}
+.api-hub strong{font-size:31px;color:#58ead0;letter-spacing:-.025em}
+.api-hub span{font-size:15px;color:#b5d8df}
+.api-hub-arrow{font-size:33px;color:#58ead0;text-align:center}
+.api-destination{padding-left:4px}
+.api-destination strong{display:block;font-size:33px;letter-spacing:-.04em;color:#58ead0}
+.api-destination span{display:block;margin-top:12px;font-size:17px;color:#b3cbd9;white-space:nowrap}
 .extension-outcome{position:absolute;left:72px;right:72px;top:575px;border-top:1px solid #2d485b;padding-top:18px;font-size:26px;color:#d4e5ed}
 .extension-outcome strong{color:#58ead0;font-weight:700}
 .ending-entry h2{font-size:52px;line-height:1.25}
