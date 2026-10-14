@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; font-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; base-uri 'none'; form-action 'none'">
+  <title>발표 대본 · DataTalk</title>
+  <link rel="stylesheet" href="css/presentation-fonts.css">
+  <link rel="stylesheet" href="css/speaker.css">
+</head>
+<body data-speaker-view>
+  <header class="speaker-header">
+    <div class="heading"><h1>발표 대본</h1><span id="connection" role="status">발표 화면 연결 중</span></div>
+    <p class="hint">이 창의 제목 표시줄을 잡고 다른 모니터로 옮기세요. 크기도 자유롭게 조절할 수 있습니다.</p>
+    <div class="speaker-tools">
+      <label>보기 <select id="script-view"><option value="current">현재 슬라이드</option><option value="all">전체 흐름</option><option value="human">내 발표 · 3:20</option><option value="ai">AI 소개 · 3:40</option></select></label>
+      <div class="font-tools" aria-label="대본 글자 크기"><button type="button" id="font-smaller" aria-label="대본 글자 작게">가−</button><output id="font-size" aria-live="polite">22</output><button type="button" id="font-larger" aria-label="대본 글자 크게">가+</button></div>
+    </div>
+  </header>
+  <main id="speaker-content" tabindex="0" aria-label="발표 대본 내용"><p class="empty">발표 화면에서 ‘발표 대본’을 열어 주세요.</p></main>
+  <footer class="speaker-nav" aria-label="발표 슬라이드 조작">
+    <button id="speaker-prev" type="button" aria-label="이전 슬라이드" disabled>← 이전</button>
+    <div class="slide-status"><strong id="speaker-counter">— / —</strong><span id="speaker-caption">발표 화면을 기다리는 중</span></div>
+    <button id="speaker-next" type="button" aria-label="다음 슬라이드" disabled>다음 →</button>
+  </footer>
+  <script src="js/speaker.js"></script>
+</body>
+</html>
