@@ -1,5 +1,5 @@
 (()=>{'use strict';
-const $=s=>document.querySelector(s),payload={audio:"audio/narration.mp3",fixture:JSON.parse(document.getElementById("ui-fixture").textContent)};
+const $=s=>document.querySelector(s),payload={audio:"audio/narration.mp3?v=825b440163e9",fixture:JSON.parse(document.getElementById("ui-fixture").textContent)};
 const audio=$('#demo-voice'),frame=$('#real-app'),world=$('#app-world'),camera=$('#app-camera'),controls=$('#demo-audio-controls');
 const stage=$('.stage-wrap');stage.tabIndex=-1;
 const focusStage=()=>stage.focus({preventScroll:true});
@@ -110,7 +110,7 @@ frame.addEventListener('load',async()=>{
  },true);
  ui.initialize(payload.fixture);await frame.contentDocument.fonts.ready;await document.fonts.ready;ready=true;$('#demo-play').disabled=false;$('#demo-play').textContent='▶ 재생';$('#ai-start').disabled=false;showCurrent();
 });
-frame.src='demo.html';
+frame.src='demo.html?v=a2dbf30b4c5e';
 showCurrent();function loop(){if(ready&&isDemo())paint(audio.currentTime);requestAnimationFrame(loop);}requestAnimationFrame(loop);
 window.offlineDemo={ready:()=>ready,cues,seek,getState:()=>({ready,index:window.deck.getIndex(),page:window.deck.getIndex()+1,scene:ready?frame.contentWindow.DemoUI.getScene():null,time:audio.currentTime,paused:audio.paused,ended:audio.ended,pose,input:ready?frame.contentDocument.getElementById('input').value:null,sfxCount,sfxEnabled:soundOn,sqlTyping,sqlCount})};
 window.review={ready:()=>ready,getState:window.offlineDemo.getState};
