@@ -1,10 +1,10 @@
 const $ = id => document.getElementById(id);
-const icon = name => '<svg aria-hidden="true"><use href="#'+name+'"/></svg>';
+const icon = name => '<svg class="dt-ui-icon" aria-hidden="true"><use href="#'+name+'"/></svg>';
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const root = location.pathname.replace(/\/datatalk\/?$/, '').replace(/\/$/, '');
 const apiBase = root + '/api/datatalk';
 const token = document.querySelector('meta[name="csrf-token"]').content;
-const fileMode = false;
+const fileMode = location.protocol === 'file:';
 const model = {ready:false,summary:[],cache:new Map(),current:null,modules:[],catalogue:null,
                expanded:new Set(),graphCollapsed:new Set(),graphForm:null,histories:new Map(),composing:false,tab:'table',busy:null,setup:'',error:'',generation:0,
                toolOpen:false,toolSearch:'',catalogSearch:'',schemaDraft:new Set(),
@@ -33,13 +33,14 @@ function workspaceHasUnresolvedJob(wid=model.current?.id){return !!wid&&(model.j
 function setLocalJob(wid,job){if(!wid||!job?.query_id)return;model.jobs??=new Map();const jobs=model.jobs.get(wid)||[],old=jobs.find(j=>j.query_id===job.query_id);if(old&&terminalJobStates.has(old.state)&&job.state!==old.state)return;model.jobs.set(wid,jobs.filter(j=>j.query_id!==job.query_id).concat({...old,...job}));}
 function uncertainQuery(wid,qid,kind='query',message='서버의 실행 상태를 확인하지 못했습니다. 자동으로 다시 실행하지 않습니다. 상태를 확인하거나 DB 중단을 요청해 주세요.'){rememberPendingQuery(wid,qid,kind);setLocalJob(wid,{query_id:qid,kind,state:'interrupted',local_unconfirmed:true,message});}
 function resetApiTransport(reason='refresh'){model.connectionEpoch=(model.connectionEpoch||0)+1;for(const request of apiRequests){request.stopReason=reason;request.controller.abort();}}
-function expireAuthentication(error){if(model.authRequired)return;model.authRequired=true;queue42.clear();model.generation++;resetApiTransport('auth');stopCachePolling(true);clearTimeout(jobsPoll);clearTimeout(analysisPoll);jobRecoverySerial++;recoveringJobs=false;model.ready=false;model.current=null;model.peekTable=null;model.summary=[];model.cache.clear();model.jobs=new Map();model.jobStatusUnknown=new Set();model.jobWorkspaceRefresh=new Set();model.recoveredExports=new Map();pendingQueryReceipts.clear();persistPendingQueries();model.modules=[];model.catalogue=null;model.graphForm=null;model.graphSetupSource=null;model.histories.clear();tableGraphIndexes.clear();analysisUI=null;analysisCache.clear();model.cacheOutcomes.clear();quickDrafts.clear();edsxDrafts.clear();edsxSelections.clear();quickUI=null;edsxUI=null;questionSelections.clear();if(tableTypesUI){clearTypeTimers(tableTypesUI);tableTypesUI=null;}for(const dialog of document.querySelectorAll('dialog[open]'))dialog.close();model.setup=error.code==='CSRF_INVALID'?'로그인 상태가 변경되었습니다. 페이지를 새로고침하고 사내 인증을 확인해 주세요.':'로그인 세션이 만료되었거나 인증이 필요합니다. 사내 로그인 후 다시 연결해 주세요.';model.error='';$('connection-status').textContent='인증 필요';render();}
+function expireAuthentication(error){if(model.authRequired)return;dt6StopSpeaking();model.authRequired=true;queue42.clear();model.generation++;resetApiTransport('auth');stopCachePolling(true);clearTimeout(jobsPoll);clearTimeout(analysisPoll);jobRecoverySerial++;recoveringJobs=false;model.ready=false;model.current=null;model.peekTable=null;model.summary=[];model.cache.clear();model.jobs=new Map();model.jobStatusUnknown=new Set();model.jobWorkspaceRefresh=new Set();model.recoveredExports=new Map();pendingQueryReceipts.clear();persistPendingQueries();model.modules=[];model.catalogue=null;model.graphForm=null;model.graphSetupSource=null;model.histories.clear();tableGraphIndexes.clear();analysisUI=null;analysisCache.clear();model.cacheOutcomes.clear();quickDrafts.clear();edsxDrafts.clear();edsxSelections.clear();quickUI=null;edsxUI=null;questionSelections.clear();if(tableTypesUI){clearTypeTimers(tableTypesUI);tableTypesUI=null;}for(const dialog of document.querySelectorAll('dialog[open]'))dialog.close();model.setup=error.code==='CSRF_INVALID'?'로그인 상태가 변경되었습니다. 페이지를 새로고침하고 사내 인증을 확인해 주세요.':'로그인 세션이 만료되었거나 인증이 필요합니다. 사내 로그인 후 다시 연결해 주세요.';model.error='';$('connection-status').textContent='인증 필요';render();}
 async function api(path,body,requestOptions={}) {return window.DemoUI.api(path,body,requestOptions);}
 function toast(message) {
   const x=$('toast');x.textContent=message;x.classList.remove('hidden');
   clearTimeout(window.__toast);window.__toast=setTimeout(()=>x.classList.add('hidden'),4500);
 }
 function apply(ws) {
+  if(model.current&&model.current.id!==ws.id)dt6StopSpeaking();
   if(model.current&&model.current.id!==ws.id){model.peekTable=null;clearTimeout(analysisPoll);analysisUI=null;model.graphForm=null;model.graphSetupSource=null;$('analysis-dialog').close();$('types-dialog').close();$('eds-dialog').close();$('quick-dialog').close();$('eds-extract-dialog').close();}
   try{sessionStorage.setItem('datatalk.v2.active.workspace',ws.id);}catch{}
   model.current=ws;model.cache.set(ws.id,ws);model.expanded.add(ws.id);
@@ -182,16 +183,24 @@ function typeFailureView(info){
     '<details><summary>실패한 SQL과 바인딩 값 보기</summary><pre class="highlighted">'+sqlHTML(info.sql)+'</pre><pre>'+esc(JSON.stringify(info.params??{},null,2))+'</pre></details>'+ 
     '<div class="confirm-actions">'+(info.source_ref?'<button data-table-types="'+esc(info.source_ref)+'">컬럼·자료형 열기</button>':'')+'<button data-retry-type>수정 SQL 요청하기 ↗</button></div></section>';
 }
+function dt6Mascot(speaking=false){return '<svg class="dt6-mascot'+(speaking?' dt6-speaking':'')+'" viewBox="0 0 64 64" aria-hidden="true" focusable="false"><rect class="dt6-tile" width="64" height="64" rx="15"/><path class="dt6-face" d="M32 10C17 10 10 14 10 29v9c0 7 2 10 4 13L12 56c-.6 1.6.8 2.2 2.3 1.5L23 54h12c15 0 19-6 19-21v-5c0-14-7-18-22-18Z"/><circle class="dt6-eye" cx="23" cy="31" r="3.6"/><circle class="dt6-eye" cx="42" cy="31" r="3.6"/><path class="dt6-mouth-smile" d="M27 40Q32 45 37 40"/><ellipse class="dt6-mouth-open" cx="32" cy="41" rx="3.5" ry="4.2"/></svg>';}
+let dt6Reply=null,dt6ReplyTimer=0;
+function dt6StopSpeaking(){clearTimeout(dt6ReplyTimer);dt6Reply=null;document.querySelectorAll('.dt6-speaking').forEach(el=>el.classList.remove('dt6-speaking'));}
+function dt6BeginReply(ws,oldCount){dt6StopSpeaking();const messages=ws?.messages||[];if(messages.length<=oldCount)return;let index=-1;for(let i=messages.length-1;i>=oldCount;i--)if(messages[i].role==='assistant'){index=i;break;}if(index<0)return;dt6Reply={workspace:ws.id,index,until:Date.now()+1600};dt6ReplyTimer=setTimeout(dt6StopSpeaking,1600);}
+function dt6IsReply(ws,index){return !model.authRequired&&dt6Reply?.workspace===ws?.id&&dt6Reply.index===index&&Date.now()<dt6Reply.until;}
+document.addEventListener('visibilitychange',()=>{if(document.hidden)dt6StopSpeaking();});
+addEventListener('pagehide',dt6StopSpeaking);
+
 function renderChat() {
   const ws=model.current,t=currentTable(),selectedGraph=currentGraph();
   $('title').textContent=ws?ws.id+' · '+ws.name:'데이터와 대화 시작';
   let html='';
   if(model.setup) {
-    html='<div class="welcome"><div class="orb">'+icon('spark')+'</div><h1>대화에서 시작하는 데이터.</h1></div>'+
+    html='<div class="welcome"><div class="orb">'+dt6Mascot()+'</div><h1>대화에서 시작하는 데이터.</h1></div>'+
       '<div class="status-card"><strong>연결 상태 확인</strong><p>'+esc(model.setup)+'</p><button data-boot>다시 확인</button></div>';
   } else if(ws) {
     html=ws.messages.length?'<div class="eyebrow">WORKSPACE '+esc(ws.id)+'</div>':
-      '<div class="welcome"><div class="orb">'+icon('spark')+'</div><h1>질문에서 시작해,<br><em>결과까지 이어가세요.</em></h1>'+
+      '<div class="welcome"><div class="orb">'+dt6Mascot()+'</div><h1>질문에서 시작해,<br><em>결과까지 이어가세요.</em></h1>'+
       '<p>원하는 기간과 조건을 말해 주세요. 필요한 내용은 대화로 먼저 확인합니다.</p>'+
       '<div class="examples"><button class="example" data-prompt="조회 가능한 테이블을 알려줘."><b>어떤 데이터가 있을까?</b><small>원본 찾기 ↗</small></button>'+
       '<button class="example" data-template42="FAB_MAIN"><b>FAB_MAIN 공정 데이터 추출</b><small>조건 입력 ↗</small></button>'+
@@ -199,7 +208,7 @@ function renderChat() {
     html+=(ws.messages||[]).map((msg,mi)=>{
       if(msg.role==='user')return '<div class="user"><div class="bubble message-text">'+esc(msg.content)+'</div></div>';
       const result=ws.tables.find(x=>x.id===msg.table_id);
-      return '<div class="assistant"><div class="ai-icon">'+icon('spark')+'</div><div class="answer"><div class="author">DataTalk <span>데이터 어시스턴트</span></div>'+
+      return '<div class="assistant"><div class="ai-icon">'+dt6Mascot(dt6IsReply(ws,mi))+'</div><div class="answer"><div class="author">DataTalk <span>데이터 어시스턴트</span></div>'+
         '<p class="message-text">'+esc(msg.content)+'</p>'+(msg.api_help?renderApiHelp(msg.api_help,mi):'')+(msg.empty_result?emptyQueryView(msg.empty_result):'')+(msg.type_failure?typeFailureView(msg.type_failure):'')+
         (result?'<button class="result-link" data-open-table="'+esc(ws.id+'.'+result.id)+'"><span class="alias">'+
             esc(result.id)+'</span><span><strong>'+esc(result.title)+'</strong><small>'+esc(ws.id+'.'+result.id)+
@@ -211,7 +220,7 @@ function renderChat() {
     if(ws.pending_proposal)html+=proposalView(ws.pending_proposal);
   }
   if(model.error)html+='<div class="inline-error" role="alert">'+esc(model.error)+'</div>';
-  if(model.busy)html+='<div class="operation-bar" role="status"><i></i><span>'+esc(model.busy.label)+'</span>'+
+  if(model.busy)html+='<div class="operation-bar" role="status">'+(model.busy.kind==='chat'?dt6Mascot(!model.busy.cancelRequested&&!model.authRequired&&!document.hidden):'<i></i>')+'<span>'+esc(model.busy.label)+'</span>'+
     (model.busy.cancelable?'<button data-cancel '+(model.busy.cancelRequested?'disabled':'')+'>'+
        (model.busy.cancelRequested?'중단 요청됨':'중단 요청')+'</button>':'')+'</div>';
   if(ws)html+=recoveredJobsHTML(ws)+recoveredExportHTML(ws)+analysisCard(ws);
@@ -227,11 +236,38 @@ function renderChat() {
   updateComposer();
   $('tool-toggle').disabled=!model.ready||!ws||!!model.busy||workspaceHasUnresolvedJob();
 }
+// DATATALK_RESULT_NUMBER_UI_FIX_2026_10_12_3 — display only, never write data.
+function dtNumber4(value,grouping=false){
+ if(typeof value==='string'){
+  const text=value.trim(),m=/^([+-]?)(\d+)(?:\.(\d*))?$/.exec(text);
+  if(m){
+   const fraction=m[3]||'';
+   if(/^0+$/.test(m[2])&&fraction.slice(0,4)==='0000'&&/[1-9]/.test(fraction)){
+    const number=Number(text);if(number!==0&&Number.isFinite(number))return dtNumber4(number,grouping);
+   }
+   let scaled=BigInt(m[2])*10000n+BigInt((fraction+'0000').slice(0,4));
+   if((fraction[4]||'0')>='5')scaled+=1n;
+   let integer=(scaled/10000n).toString(),decimal=(scaled%10000n).toString().padStart(4,'0').replace(/0+$/,'');
+   if(grouping)integer=integer.replace(/\B(?=(\d{3})+(?!\d))/g,',');
+   return (m[1]==='-'&&scaled!==0n?'-':'')+integer+(decimal?'.'+decimal:'');
+  }
+  if(/^[+-]?\d+(?:\.\d+)?[eE][+-]?\d+$/.test(text))value=Number(text);else return value;
+ }
+ if(typeof value!=='number'||!Number.isFinite(value))return String(value??'—');
+ if(value!==0&&Math.abs(value)<.0001)return value.toExponential(4).replace(/(\.\d*?[1-9])0+e/,'$1e').replace(/\.0+e/,'e');
+ const key=grouping?'grouped':'plain';dtNumber4._formats??={};dtNumber4._formats[key]??=new Intl.NumberFormat('en-US',{maximumFractionDigits:4,minimumFractionDigits:0,useGrouping:grouping});return dtNumber4._formats[key].format(Object.is(value,-0)?0:value);
+}
+function dtAnalysisText4(value){
+ return String(value??'').replace(/(?<![\w.:-])[-+]?\d+(?:\.\d+)(?:[eE][-+]?\d+)?(?![\w.:-])/g,x=>dtNumber4(x));
+}
+
+function dtCell4(value,column){const kind=columnKind(typeof column==='string'?'':column.type??column.oid);return typeof value==='number'||typeof value==='string'&&['integer','number'].includes(kind)?dtNumber4(value):typeof value==='object'?JSON.stringify(value):value;}
 function tableHTML(t) {
   const cols=t.columns||[],rows=t.rows||[],edsSelect=edsxSelectable(t),edsSelected=edsSelect?edsxSelection(t):null;
   const kind=c=>columnKind(typeof c==='string'?'':c.type),cls=c=>['integer','number'].includes(kind(c))?'cell-number':['date','datetime'].includes(kind(c))?'cell-date':'cell-text';
-  return edsxDrilldownHTML(t)+'<div class="table-wrap panel-table"><table><thead><tr>'+(edsSelect?'<th scope="col">선택</th>':'')+'<th scope="col" class="cell-number">#</th>'+cols.map(c=>'<th scope="col" class="'+cls(c)+'">'+esc(typeof c==='string'?c:c.name)+'<small class="column-type">'+esc(typeof c==='string'?'자료형 미확인':columnTypeLabel(c.type??c.oid))+'</small></th>').join('')+'</tr></thead><tbody>'+ (rows.length?rows.map((row,i)=>'<tr>'+(edsSelect?'<td>'+(edsxRowTarget(t,row)?'<input class="edsx-result-select" type="checkbox" data-edsx-result-row="'+i+'" aria-label="'+(i+1)+'행 대상 선택" '+(edsSelected.has(i)?'checked':'')+'>':'')+'</td>':'')+'<td class="cell-number">'+esc(i+1)+'</td>'+cols.map((c,j)=>{const v=Array.isArray(row)?row[j]:row[typeof c==='string'?c:c.name];return '<td class="'+cls(c)+'">'+(v===null?'<em class="null">NULL</em>':esc(typeof v==='object'?JSON.stringify(v):v))+'</td>';}).join('')+'</tr>').join(''):'<tr><td colspan="'+(cols.length+1+(edsSelect?1:0))+'" class="no-rows">결과 행이 없습니다.</td></tr>')+'</tbody></table></div>';
+  return edsxDrilldownHTML(t)+'<div class="table-wrap panel-table"><table><thead><tr>'+(edsSelect?'<th scope="col">선택</th>':'')+'<th scope="col" class="cell-number">#</th>'+cols.map(c=>'<th scope="col" class="'+cls(c)+'">'+esc(typeof c==='string'?c:c.name)+'<small class="column-type">'+esc(typeof c==='string'?'자료형 미확인':columnTypeLabel(c.type??c.oid))+'</small></th>').join('')+'</tr></thead><tbody>'+ (rows.length?rows.map((row,i)=>'<tr>'+(edsSelect?'<td>'+(edsxRowTarget(t,row)?'<input class="edsx-result-select" type="checkbox" data-edsx-result-row="'+i+'" aria-label="'+(i+1)+'행 대상 선택" '+(edsSelected.has(i)?'checked':'')+'>':'')+'</td>':'')+'<td class="cell-number">'+esc(i+1)+'</td>'+cols.map((c,j)=>{const v=Array.isArray(row)?row[j]:row[typeof c==='string'?c:c.name];return '<td class="'+cls(c)+'">'+(v===null?'<em class="null">NULL</em>':esc(dtCell4(v,c)))+'</td>';}).join('')+'</tr>').join(''):'<tr><td colspan="'+(cols.length+1+(edsSelect?1:0))+'" class="no-rows">결과 행이 없습니다.</td></tr>')+'</tbody></table></div>';
 }
+window.DataTalkNumberDisplayHotfix='DATATALK_RESULT_NUMBER_UI_FIX_2026_10_12_3';
 function qualityHTML(t){
   const a=t.analysis||{},r=a.result||{},q=a.data_quality||r.data_quality||{},n=v=>Number.isFinite(v)?v.toLocaleString():'확인 안 됨';
   if(!Object.keys(q).length)return '';
@@ -505,14 +541,14 @@ async function boot() {
   model.ready=false;model.current=null;model.peekTable=null;model.apiConnectivity=null;model.summary=[];model.cache.clear();
   tableGraphIndexes.clear();model.error='';model.setup='';model.visualizationReady=null;model.visualizationChecks=null;renderVisualizationReadiness();$('connection-status').textContent='연결 확인 중';render();
   if(fileMode) {
-    model.setup='연결 화면은 사내 서버의 /datatalk/에서 열어 주세요. 이 HTML은 V5.0 서버와 함께 사용하는 연결 화면입니다.';
+    model.setup='연결 화면은 사내 서버의 /datatalk/에서 열어 주세요. 이 HTML은 V5.1 서버와 함께 사용하는 연결 화면입니다.';
     $('connection-status').textContent='사내 서버에서 열기';model.reconnecting=false;render();return;
   }
   try{
     const status=await api('/status');if(generation!==model.generation)return;
-    if(status.contract!=='datatalk-chat-v2'||status.version!=='DATATALK-CONNECT-5.0')throw new Error('V5.0 PY와 HTML을 함께 설치해 주세요.');
+    if(status.contract!=='datatalk-chat-v2'||status.version!=='DATATALK-CONNECT-5.1')throw new Error('V5.1 PY와 HTML을 함께 설치해 주세요.');
     const uiBuild=document.querySelector('meta[name="datatalk-build"]')?.content;
-    if(status.build_id!==uiBuild)throw new Error('PY와 HTML의 빌드가 달라요. V5.0 '+uiBuild+' 파일을 함께 설치하고 서버를 재시작해 주세요.');
+    if(status.build_id!==uiBuild)throw new Error('PY와 HTML의 빌드가 달라요. V5.1 '+uiBuild+' 파일을 함께 설치하고 서버를 재시작해 주세요.');
     if(!status.ready)throw new Error(status.message||'기존 DB·LLM 연결을 확인해 주세요.');model.visualizationReady=status.visualization_ready!==false;model.visualizationChecks=status.visualization_checks||null;renderVisualizationReadiness();
     const list=await api('/workspaces');if(generation!==model.generation)return;
     model.summary=list.workspaces;
@@ -620,12 +656,12 @@ async function ask(raw){
  await sendChat42(message);
 }
 async function sendChat42(message,entry=null){
- const ws=model.current;if(!ws||model.busy)return;const oid=entry?.id||uuid(),work={label:'질문과 필요한 조건을 확인하고 있어요.',workspace_id:ws.id,operation_id:oid};
+ const ws=model.current;if(!ws||model.busy)return;const oid=entry?.id||uuid(),work={kind:'chat',label:'질문과 필요한 조건을 확인하고 있어요.',workspace_id:ws.id,operation_id:oid};
  model.toolOpen=false;model.error='';model.busy=work;if(!entry)$('input').value='';render();bottom();
  try{
    const result=await api('/chat',{workspace_id:ws.id,message,expected_revision:ws.revision,operation_id:oid,...(entry?{queue_id:entry.id}:{})});
    if(!model.ready||model.current?.id!==ws.id)return;
-   apply(result.workspace);if(!work.cancelRequested){if(result.analysis_setup)useAnalysisDraft(result.analysis_setup);if(result.graph_setup)await openGraphSetup(result.graph_setup);}
+   if(!work.cancelRequested)dt6BeginReply(result.workspace,ws.messages.length);apply(result.workspace);if(!work.cancelRequested){if(result.analysis_setup)useAnalysisDraft(result.analysis_setup);if(result.graph_setup)await openGraphSetup(result.graph_setup);}
  }catch(e){
    if(!quietConnectionError(e)&&e.code!=='OPERATION_STOPPED')await fail(e);
    if(!entry&&e.code!=='OPERATION_STOPPED'&&!quietConnectionError(e)&&!$('input').value)$('input').value=message;
@@ -640,7 +676,7 @@ function updateStop42(){
  for(const b of document.querySelectorAll('[data-common-stop]')){b.hidden=!active;b.disabled=stop42Busy;b.textContent=stop42Busy?'중지 요청 중…':'■ 중지';}
 }
 async function stopCurrent42(){
- if(stop42Busy||!model.current)return;const wid=model.current.id;stop42Busy=true;if(model.busy)model.busy.cancelRequested=true;updateStop42();
+ if(stop42Busy||!model.current)return;dt6StopSpeaking();const wid=model.current.id;stop42Busy=true;if(model.busy)model.busy.cancelRequested=true;updateStop42();
  const steps=[queue42Action('pause',{reason:'사용자가 중지했습니다. 대기 메시지를 확인한 뒤 재개하세요.'})];
  try{
    const requests=[...apiRequests].filter(r=>r.workspace_id===wid),ids=new Set(requests.map(r=>r.operation_id).filter(Boolean));
@@ -785,7 +821,7 @@ function analysisSelected(a=analysisUI){
   const module=a.draft.module;if(module.dataset.projection==='all')return a.draft.columns.map(c=>c.name);
   return [...new Set(module.dataset.bindings.flatMap(b=>{const v=a.config.parameters[b.parameter];return typeof v==='string'?[v]:Array.isArray(v)?v:[]}).filter(Boolean))];
 }
-function displayValue(value){return value===null?'<span class="null">NULL</span>':esc(typeof value==='string'?'"'+value+'"':String(value));}
+function displayValue(value){return value===null?'<span class="null">NULL</span>':esc(typeof value==='number'?dtNumber4(value):typeof value==='string'?'"'+value+'"':String(value));}
 function reportHTML(report,scope){
   if(!report)return '';
   const names=Object.keys(report.columns),bad=report.failed_rows||report.required_null_rows;
@@ -907,7 +943,7 @@ function mountCompactCharts44(){
   if(compactInstances44.has(el.id))continue;const c=compactCharts44.get(el.id);if(!c)continue;
   const options=DataTalkVisuals.e44Option({...c,x_column:'group',y_column:c.label,measures:[{column:c.label,axis:'left'}],options:{orientation:'horizontal',legend:false,zoom:false,statistics:false,show_mean:true,show_outliers:true}});
   options.brush=[];options.toolbox={feature:{restore:{},saveAsImage:{type:'png'}}};options.grid={left:90,right:25,top:30,bottom:55,containLabel:true};options.xAxis.nameLocation='middle';options.xAxis.nameGap=30;options.yAxis.name='그룹';
-  const number=v=>Number.isFinite(v)?Number(v).toLocaleString('ko-KR',{maximumSignificantDigits:6}):'—';
+  const number=v=>Number.isFinite(v)?dtNumber4(v,true):'—';
   options.tooltip={trigger:'item',confine:true,formatter:q=>q.data?._point?DataTalkVisuals.anovaTooltip(q.data._point,c):''};
   const chart=echarts.init(el,null,{renderer:'svg'});chart.setOption(options);const resize=new ResizeObserver(()=>{if(!chart.isDisposed()&&(chart.getWidth()!==el.clientWidth||chart.getHeight()!==el.clientHeight))chart.resize();});resize.observe(el);compactInstances44.set(el.id,{chart,resize});
  }
@@ -918,12 +954,12 @@ function compactSummary42(a){
  const refs=a?.run?.result_refs||[],tables=model.cache.get(a.workspace_id)?.tables||model.current?.tables||[];
  const table=tables.find(t=>refs.includes(t.canonical_ref||a.workspace_id+'.'+t.id)&&(t.columns||[]).some(c=>(typeof c==='string'?c:c.name)==='std'));
  if(!table)return '<p class="analysis-hint">그룹별 n·평균·표준편차는 저장된 전체 결과표에서 확인할 수 있습니다.</p><button data-api-action="result">전체 결과표 열기 ↗</button>';
- const names=table.columns.map(c=>typeof c==='string'?c:c.name),cols=['group','n','mean','std'],rows=table.rows.slice(0,40),format=v=>typeof v==='number'?v.toLocaleString('ko-KR',{maximumSignificantDigits:6}):v??'—';
- return '<h4>그룹별 요약</h4><table class="anova-summary42"><thead><tr><th>그룹</th><th>표본 수 n</th><th>평균</th><th>표준편차</th></tr></thead><tbody>'+rows.map(r=>'<tr>'+cols.map(c=>'<td>'+esc(format(Array.isArray(r)?r[names.indexOf(c)]:r[c]))+'</td>').join('')+'</tr>').join('')+'</tbody></table><button data-api-action="result">전체 결과표 열기 ↗</button>';
+ const names=table.columns.map(c=>typeof c==='string'?c:c.name),cols=['group','n','mean','std'],rows=table.rows.slice(0,40),format=(v,name)=>v==null?'—':dtCell4(v,table.columns.find(q=>(typeof q==='string'?q:q.name)===name)||name);
+ return '<h4>그룹별 요약</h4><table class="anova-summary42"><thead><tr><th>그룹</th><th>표본 수 n</th><th>평균</th><th>표준편차</th></tr></thead><tbody>'+rows.map(r=>'<tr>'+cols.map(c=>'<td>'+esc(format(Array.isArray(r)?r[names.indexOf(c)]:r[c],c))+'</td>').join('')+'</tr>').join('')+'</tbody></table><button data-api-action="result">전체 결과표 열기 ↗</button>';
 }
 function compactAnalysisResult(p){
  const a=analysisUI,run=a.run,ref=run.source_ref||a.draft.source_ref,version=run.source_version??a.draft.source_version,source=(model.cache.get(ref?.split('.')[0])?.tables||[]).find(t=>t.id===ref?.split('.')[1]),stale=!source||source.version!==version,params=run.config?.parameters||a.config.parameters;
- return '<section class="anova-result"><span class="analysis-kicker">분석 완료</span><h3>'+esc(p.headline||'분석 결과')+'</h3><p>'+esc(p.short_summary||p.summary||'')+'</p>'+(stale?'<p class="anova-stale42">원본이 변경되었거나 현재 원본을 확인할 수 없습니다. 생성 당시 결과입니다.</p>':'')+'<p class="anova-provenance42">'+esc(ref)+' v'+esc(version)+' · '+esc(params.method==='welch'?'Welch ANOVA':params.method||'ANOVA')+' · '+esc(params.observation_mode==='mean'?'대상별 평균':params.observation_mode==='rows'?'각 행':(params.observation_id_columns||[]).join(' + '))+'<br>'+esc(p.unit_note||'원본 조회 조건의 전체 데이터 기준')+'</p>'+compactMeanChart(p,a)+compactSummary42(a)+'<details><summary>원본 조건·결과 해석·주의사항</summary><p>'+esc(p.summary||'')+'</p><pre>'+esc(JSON.stringify({source_ref:ref,source_version:version,parameters:params,source_query:run.source_query||(!stale&&source?.sql)||'실행 당시 원본 SQL 기록 없음',source_parameters:run.source_parameters??(!stale?source?.params:undefined)},null,2))+'</pre><p>'+esc(p.descriptive_comparison||'')+'</p><ul>'+(p.limitations||[]).map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul></details></section>';
+ return '<section class="anova-result"><span class="analysis-kicker">분석 완료</span><h3>'+esc(p.headline||'분석 결과')+'</h3><p>'+esc(dtAnalysisText4(p.short_summary||p.summary||''))+'</p>'+(stale?'<p class="anova-stale42">원본이 변경되었거나 현재 원본을 확인할 수 없습니다. 생성 당시 결과입니다.</p>':'')+'<p class="anova-provenance42">'+esc(ref)+' v'+esc(version)+' · '+esc(params.method==='welch'?'Welch ANOVA':params.method||'ANOVA')+' · '+esc(params.observation_mode==='mean'?'대상별 평균':params.observation_mode==='rows'?'각 행':(params.observation_id_columns||[]).join(' + '))+'<br>'+esc(p.unit_note||'원본 조회 조건의 전체 데이터 기준')+'</p>'+compactMeanChart(p,a)+compactSummary42(a)+'<details><summary>원본 조건·결과 해석·주의사항</summary><p>'+esc(dtAnalysisText4(p.summary||''))+'</p><pre>'+esc(JSON.stringify({source_ref:ref,source_version:version,parameters:params,source_query:run.source_query||(!stale&&source?.sql)||'실행 당시 원본 SQL 기록 없음',source_parameters:run.source_parameters??(!stale?source?.params:undefined)},null,2))+'</pre><p>'+esc(dtAnalysisText4(p.descriptive_comparison||''))+'</p><ul>'+(p.limitations||[]).map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul></details></section>';
 }
 document.addEventListener('click',e=>{const b=e.target.closest('[data-anova-chart42]');if(b&&analysisUI){analysisUI.chart42=b.dataset.anovaChart42;renderAnalysis();}});
 function compactReport(a){
@@ -1037,11 +1073,50 @@ async function editAnalysisParam(index){
     $('analysis-body').querySelector('[data-column-filter="'+index+'"]'):$('api-field-'+index);
   target?.focus();
 }
+// DATATALK_RESULT_BUTTON_FIX_2026_10_12_3
+async function openAnalysisResult3(){
+ const ws=model.current,draft=ws?.analysis_setup;
+ if(!ws||!draft?.module){toast('분석 설정과 결과 상태를 먼저 불러와 주세요.');return;}
+ const a=analysisState(draft,ws.id);analysisUI=a;
+ if(a.resultOpening)return;
+ const generation=a.generation||0,runId=ws.analysis_run_id||a.run?.id;
+ const current=()=>model.current?.id===ws.id&&model.current.analysis_setup?.id===draft.id&&(a.generation||0)===generation&&(!model.current.analysis_run_id||model.current.analysis_run_id===runId);
+ const selectRef=(run,workspace)=>{
+  const refs=(run?.result_refs||[]).filter(x=>typeof x==='string');
+  const candidates=refs.map(ref=>({ref,table:workspace.tables.find(t=>(t.canonical_ref||workspace.id+'.'+t.id)===ref)})).filter(x=>x.table);
+  const summary=candidates.find(x=>['group','n','mean','std'].every(name=>x.table.columns.some(c=>(typeof c==='string'?c:c.name)===name)));
+  return summary?.ref||candidates[0]?.ref;
+ };
+ a.resultOpening=true;a.error='';
+ try{
+  if(!model.ready)throw Error('연결 상태를 확인한 뒤 결과를 열어 주세요.');
+  if(model.busy)throw Error('현재 화면 작업이 진행 중입니다. 작업이 끝난 뒤 결과를 열어 주세요.');
+  let ref=a.run?.id===runId&&a.run?.status==='completed'?selectRef(a.run,model.current):null;
+  if(!ref&&runId){
+   const reply=await api('/analysis/run/'+encodeURIComponent(runId));
+   if(!current()||reply.run?.id!==runId)return;
+   if(a.run&&a.run.id!==runId)a.run=reply.run;else acceptAnalysisReply(a,reply,generation);
+   if(reply.workspace)apply(reply.workspace);
+   ref=a.run?.status==='completed'?selectRef(a.run,model.current):null;
+   if(!ref&&a.run?.result_refs?.length){
+    const fresh=await api('/workspace/'+encodeURIComponent(ws.id));if(!current())return;apply(fresh);ref=selectRef(a.run,model.current);
+   }
+  }
+  if(!current())return;
+  if(!ref)throw Error(a.run?.status==='completed'?'저장된 결과 테이블을 찾지 못했습니다. 결과 상태와 테이블 목록을 확인해 주세요.':'아직 분석이 완료되지 않았습니다.');
+  if(model.busy)throw Error('현재 화면 작업이 진행 중입니다. 작업이 끝난 뒤 결과를 열어 주세요.');
+  $('analysis-dialog').close();await openTable(ref);
+ }catch(error){
+  if(current()){a.error=error.message;renderAnalysis();renderChat();toast(error.message);}
+ }finally{a.resultOpening=false;}
+}
+window.DataTalkResultButtonHotfix='DATATALK_RESULT_BUTTON_FIX_2026_10_12_3';
+
 async function analysisAction(action){
+  if(action==='result')return openAnalysisResult3();
   if(!analysisUI||analysisUI.draft.id!==model.current?.analysis_setup?.id)analysisUI=analysisState(model.current.analysis_setup,model.current.id);
   const a=analysisUI;if(action==='cancel_setup'){await cancelAnalysis(a);$('analysis-dialog').close();return;}if(action==='cancel')return cancelAnalysis(a);if(a.busy)return;
-  if(action==='diagnostics'){await copyText(JSON.stringify({version:'5.0',build_id:'2026.10.11.5.0r1',run_id:a.run?.id,api_job_id:a.run?.api_job_id,status:a.run?.status,stage:a.run?.error_stage,code:a.run?.error?.code,source_ref:a.draft.source_ref,source_version:a.draft.source_version,module_id:a.draft.module_id,module_version:a.draft.module_version,submission_attempts:a.run?.submission_attempts},null,2));return;}
-  if(action==='result'){const ref=a.run?.result_refs?.[0];if(!ref){a.error='결과 테이블 참조를 찾지 못했습니다.';renderAnalysis();return;}$('analysis-dialog').close();await openTable(ref);return;}
+  if(action==='diagnostics'){await copyText(JSON.stringify({version:'5.1',build_id:'2026.10.13.5.1r3',run_id:a.run?.id,api_job_id:a.run?.api_job_id,status:a.run?.status,stage:a.run?.error_stage,code:a.run?.error?.code,source_ref:a.draft.source_ref,source_version:a.draft.source_version,module_id:a.draft.module_id,module_version:a.draft.module_version,submission_attempts:a.run?.submission_attempts},null,2));return;}
   if(action==='edit_unit'){
     const index=a.draft.module.ui.fields.findIndex(f=>f.parameter==='observation_id_columns');
     if(index>=0)await editAnalysisParam(index);return;
@@ -1803,6 +1878,424 @@ document.addEventListener('click',async event=>{const b=event.target.closest('[d
   }catch(error){toast(error.message+' · 전체 CSV 다운로드도 사용할 수 있습니다.');}finally{b.disabled=false;}
  });
  
+/* DataTalk 5.1: bounded metadata requests and visible, recoverable form state.
+ * Inline this after the existing connected UI. No DB/LLM/permission bypass.
+ */
+(() => {
+  'use strict';
+  const TIMEOUT = 20000;
+  const stateOf = kind => kind === 'eds' ? edsxUI : quickUI;
+  const prefix = kind => kind === 'eds' ? 'edsx' : 'quick';
+  const originalFooters = {quick: quickRenderFooter, eds: edsxRenderFooter};
+  const originalErrors = {quick: quickLocalError, eds: edsxLocalError};
+  const active = {quick: null, eds: null};
+  const context = (kind, a) => JSON.stringify(kind === 'quick'
+    ? [a.workspace_id, a.table, quickRequestedSchemas(a)]
+    : [a.workspace_id, a.table, a.schema, a.step_seq, a.meas_type, a.subitem, a.mode, a.group_by,
+       a.step_seqs || [], a.meas_types || []]);
+  function panel(kind) {
+    const id = prefix(kind) + '-status51';
+    let node = $(id);
+    if (!node) {
+      node = document.createElement('div'); node.id = id;
+      node.className = 'quick-status51'; node.setAttribute('role', 'status');
+      node.setAttribute('aria-live', 'polite');
+      const message = document.createElement('span'); message.dataset.message51 = '';
+      const retry = document.createElement('button'); retry.type = 'button';
+      retry.dataset.retry51 = kind; retry.textContent = '다시 시도';
+      node.append(message, retry); $(prefix(kind) + '-error').before(node);
+    }
+    return node;
+  }
+  function unavailable(kind, a) {
+    if (a.optionsError51) return a.optionsError51;
+    if (!a.options) return '조회 조건·컬럼 정보를 불러오지 못했습니다. 다시 시도해 주세요.';
+    if (kind === 'eds') {
+      const m = edsxMetadata(a);
+      if (m.ready === false) return m.message || '선택한 제품·STEP·측정유형의 조회 준비가 완료되지 않았습니다. 조건을 바꾸거나 다시 시도해 주세요.';
+    }
+    if (a.options.ready === false) return a.options.message || '서버의 조회 준비가 완료되지 않았습니다. 다시 시도하거나 담당자에게 연결 상태를 확인해 주세요.';
+    return '';
+  }
+  function validate(kind, a) {
+    if (a.workspace_id !== model.current?.id) return '작업공간이 변경되었습니다. 간편추출을 다시 열어 주세요.';
+    return unavailable(kind, a) || originalErrors[kind](a) || (kind === 'eds' ? window.DataTalkMSR51?.validate(a) || '' : '');
+  }
+  function footer(kind) {
+    const a = stateOf(kind); if (!a) return;
+    originalFooters[kind]();
+    const p = prefix(kind), node = panel(kind), busy = !!a.busy;
+    // Missing fields/readiness may be explained by clicking; only in-flight work blocks.
+    $(p + '-preview-button').disabled = busy || !!a.loading;
+    const why = a.loading ? '조회 조건·컬럼 정보를 불러오는 중입니다. 20초 안에 응답이 없으면 재시도할 수 있습니다.'
+      : busy ? (a.busy === 'preview' ? '입력한 조건을 확인하고 있습니다.' : '요청을 처리하고 있습니다.')
+      : a.error || unavailable(kind, a) || (a.preview
+        ? '조건 확인 완료 · SQL 준비를 누르세요.'
+        : '조건을 입력한 뒤 ‘조건 확인’을 누르세요. 빠진 항목이 있으면 위치를 안내합니다.');
+    node.querySelector('[data-message51]').textContent = why;
+    const retry = node.querySelector('[data-retry51]');
+    retry.hidden = busy || !!a.loading || !unavailable(kind, a);
+    retry.disabled = busy || !!a.loading;
+    $(p + '-preview-button').title = why;
+    $(p + '-preview-button').setAttribute('aria-describedby', node.id);
+    const offline = kind === 'eds' && window.DATATALK_OFFLINE_PREVIEW === true;
+    $(p + '-plan-button').disabled = busy || !!a.loading || !a.preview || !!unavailable(kind, a) || offline;
+    $(p + '-plan-button').title = offline ? '오프라인 예시에서는 SQL을 준비할 수 없습니다.'
+      : !a.preview ? '먼저 조건 확인을 완료해 주세요.' : why;
+    if (kind === 'eds') {
+      $('edsx-readiness').textContent = why;
+      // ALL is an explicit request, not a fabricated enumeration of catalogue numbers.
+      $('edsx-number-all').disabled = busy || !!a.loading || !!unavailable(kind, a) || !edsxIsMeasurement(a);
+      $('edsx-number-all').title = $('edsx-number-all').disabled ? why : '현재 유형의 전체 번호를 요청합니다. 서버에서 유효 범위를 검증합니다.';
+      window.DataTalkMSR51?.afterFooter(a);
+    }
+  }
+  function stopRequest(kind, reason) {
+    const job = active[kind]; if (!job) return;
+    active[kind] = null; job.a.loading = false;
+    job.controller.abort(new DOMException(reason, 'AbortError'));
+  }
+  async function load(kind, force = false) {
+    const a = stateOf(kind); if (!a) return false;
+    if (kind === 'quick') clearTimeout(quickOptionsTimer);
+    const key = context(kind, a), old = active[kind];
+    if (old?.a === a && old.key === key) return old.promise;
+    if (old) stopRequest(kind, '조건이 변경되어 이전 응답을 사용하지 않습니다.');
+    if (!force && a.optionsKey51 === key && a.options && !a.optionsError51) {
+      a.loading = false;
+      if (kind === 'quick') {quickSetColumns(a, a.options.columns || []); quickRenderColumns();}
+      footer(kind); return !unavailable(kind, a);
+    }
+    const controller = new AbortController();
+    const job = {a, key, controller, promise: null}; active[kind] = job;
+    a.loading = true; a.optionsError51 = ''; a.preview = null;
+    $(prefix(kind) + '-preview').hidden = true; footer(kind);
+    job.promise = (async () => {
+      let timer, rejectAbort;
+      const aborted = new Promise((_, reject) => {
+        rejectAbort = () => reject(controller.signal.reason || new DOMException('Aborted', 'AbortError'));
+        controller.signal.addEventListener('abort', rejectAbort, {once: true});
+      });
+      try {
+        timer = setTimeout(() => controller.abort(new Error('OPTIONS_TIMEOUT51')), TIMEOUT);
+        const schemas = kind === 'quick' ? quickRequestedSchemas(a) : (a.schema ? [a.schema] : []);
+        const body = {table: a.table, ...(schemas.length ? {schemas} : {})};
+        if (kind === 'eds') Object.assign(body, {step_seq:a.step_seq, step_seqs:a.step_seqs, meas_type:a.meas_type, meas_types:a.meas_types, subitem:a.subitem, mode:a.mode, group_by:a.group_by});
+        const r = await Promise.race([api('/quick-extract/options', body, {signal:controller.signal}), aborted]);
+        if (active[kind] !== job || stateOf(kind) !== a || context(kind, a) !== key) return false;
+        if (!r || !Array.isArray(r.schemas) || (kind === 'quick' && !Array.isArray(r.columns)))
+          throw new Error('OPTIONS_FORMAT51');
+        if (kind === 'eds' && (!r.eds_options || typeof r.eds_options.ready !== 'boolean'))
+          throw new Error('OPTIONS_FORMAT51');
+        a.options = r; a.error = ''; a.optionsKey51 = key; a.optionsKey = null;
+        if (kind === 'quick') {
+          a.preference = r.preference || null; quickSetColumns(a, r.columns); quickRenderConditions(); quickRenderColumns();
+        } else {
+          const names = r.schemas.map(s => typeof s === 'string' ? s : s.name), m = edsxMetadata(a);
+          if (!a.schema && names.length) {
+            a.schema = names[0]; a.loading = false; active[kind] = null;
+            edsxRenderMetadata(); return await load(kind, true);
+          }
+          if (a.schema && !names.includes(a.schema)) {a.schema = ''; a.optionsKey51 = null;}
+          if (a.meas_type && a.meas_type !== 'ALL' && Array.isArray(m.meas_types) && !m.meas_types.includes(a.meas_type)) {
+            a.meas_type = ''; a.meas_types = []; a.optionsKey51 = null;
+          }
+          if (Array.isArray(m.subitems) && m.subitems.length && !m.subitems.includes(a.subitem))
+            a.subitem = m.subitems.includes('AVG') ? 'AVG' : m.subitems[0];
+          edsxRenderMetadata();
+        }
+        return !unavailable(kind, a);
+      } catch (error) {
+        if (active[kind] !== job || stateOf(kind) !== a) return false;
+        a.options = null; a.optionsKey51 = null;
+        a.optionsError51 = error.message === 'OPTIONS_TIMEOUT51'
+          ? '조건·컬럼 정보 응답이 20초를 초과했습니다. 입력은 유지했습니다. 다시 시도해 주세요. 서버 작업 종료 여부는 별도 확인이 필요합니다.'
+          : error.status === 401 || error.status === 403 || model.authRequired
+            ? '로그인 또는 접근 권한을 확인해 주세요. 다시 로그인한 뒤 재시도하세요.'
+            : error.message === 'OPTIONS_FORMAT51'
+              ? '서버의 조건·컬럼 응답 형식이 맞지 않습니다. 담당자에게 간편추출 연결 규격 확인을 요청해 주세요.'
+              : '조건·컬럼 정보를 불러오지 못했습니다. 연결을 확인한 뒤 다시 시도해 주세요.';
+        a.error = a.optionsError51;
+        if (/^[A-Z][A-Z0-9_]{1,79}$/.test(error.code || '')) a.error = a.optionsError51 += ' · 오류 코드: ' + error.code;
+        return false;
+      } finally {
+        clearTimeout(timer); controller.signal.removeEventListener('abort', rejectAbort);
+        if (active[kind] === job) {
+          active[kind] = null; a.loading = false;
+          if (stateOf(kind) === a) {if (kind === 'quick') quickRenderColumns(); footer(kind);}
+        }
+      }
+    })();
+    return job.promise;
+  }
+  function focusInvalid(kind, a, error) {
+    const p = prefix(kind); let el;
+    if (/기간|시작일|종료일/.test(error)) el = $(p + '-start-date');
+    else if (kind === 'quick') {
+      if (/컬럼/.test(error)) el = $('quick-columns').querySelector('input');
+      else if (a.table === 'FAB_MAIN') el = $('quick-steps');
+      else if (/item_level/.test(error)) el = $('quick-level-choices').querySelector('input');
+      else {
+        const fields = quickTables[a.table].fields;
+        let index = a.rows.findIndex(row => fields.some(f => String(row[f] || '').trim()) && fields.some(f => !String(row[f] || '').trim()));
+        if (index < 0) index = 0;
+        a.page = Math.floor(index / 100); quickRenderConditions();
+        const field = fields.find(f => !String(a.rows[index]?.[f] || '').trim()) || fields[0];
+        el = [...$('quick-grid-body').querySelectorAll('[data-quick-cell]')].find(e => Number(e.dataset.quickIndex) === index && e.dataset.quickCell === field);
+        if (/제품/.test(error)) el = (a.table === 'EDS_WF_BIN' ? $('quick-schema-choices') : $('quick-grid-body')).querySelector('input[type=checkbox]') || el;
+      }
+    } else if (/제품|스키마/.test(error)) el = $('edsx-schema');
+    else if (/STEP|EDS_P|EDS_M/.test(error)) el = $('edsx-steps').querySelector('input');
+    else if (/측정유형/.test(error)) el = $('edsx-meas-types').querySelector('input');
+    else if (/번호|숫자|컬럼/.test(error)) el = $('edsx-typed44')?.querySelector('textarea') || $('edsx-numbers');
+    if (el) {el.setAttribute('aria-invalid', 'true'); el.focus(); el.scrollIntoView({block:'nearest'});}
+  }
+  async function preview(kind) {
+    const a = stateOf(kind); if (!a || a.busy || a.loading || a.previewPending51) return;
+    a.previewPending51 = true;
+    try {
+      await load(kind);
+      if (stateOf(kind) !== a || !$(kind === 'eds' ? 'eds-extract-dialog' : 'quick-dialog').open) return;
+      const error = validate(kind, a);
+      if (error) {a.error = error; footer(kind); if (!unavailable(kind, a)) focusInvalid(kind, a, error); return;}
+      a.busy = 'preview'; a.error = ''; footer(kind);
+      // Only metadata gets a short timeout. Keep actual server validation semantics.
+      const r = await api('/quick-extract/preview', kind === 'quick' ? quickPayload(a) : edsxPayload(a));
+      if (stateOf(kind) !== a) return;
+      a.preview = r;
+      if (kind === 'eds' && r.msr_catalog_token) a.previewCatalogToken51 = r.msr_catalog_token;
+      if (kind === 'quick') {
+        const mode = a.columnMode; quickSetColumns(a, r.columns || a.columns); a.columnMode = mode;
+        if (r.selected_columns) a.selected = new Set(r.selected_columns);
+        quickRenderColumns();
+      }
+      const box = $(prefix(kind) + '-preview'); box.hidden = false;
+      box.innerHTML = '<strong>조회조건 확인 완료</strong><p>' + esc(typeof r.summary === 'string' ? r.summary : JSON.stringify(r.summary || {})) + '</p>'
+        + (r.warnings || []).map(w => '<p>' + esc(typeof w === 'string' ? w : w.message || JSON.stringify(w)) + '</p>').join('');
+      if (kind === 'eds' && r.columns?.length) box.innerHTML += '<details><summary>결과 컬럼 '+r.columns.length+'개</summary><p>'+r.columns.map(c=>esc(quickColumnName(c))).join(' · ')+'</p></details>';
+    } catch (error) {
+      if (stateOf(kind) === a) {a.error = error.message || '조건 확인에 실패했습니다. 다시 시도해 주세요.'; a.preview = null;}
+    } finally {
+      a.previewPending51 = false; if (a.busy === 'preview') a.busy = false;
+      if (stateOf(kind) === a) footer(kind);
+    }
+  }
+  quickLoadOptions = force => load('quick', force);
+  edsxLoadOptions = force => load('eds', force);
+  quickRenderFooter = () => footer('quick');
+  edsxRenderFooter = () => footer('eds');
+  quickLocalError = a => validate('quick', a);
+  edsxLocalError = a => validate('eds', a);
+  // Old single-select and new multi-select listeners used to handle the same STEP
+  // change. A fast options reply could redraw the checkbox between listeners and
+  // erase the new selection. Snapshot once, before either legacy listener runs.
+  $('eds-extract-dialog').addEventListener('change', e => {
+    const a = edsxUI, t = e.target;
+    if (!a || !['edsx-step','edsx-meas44','edsx-subitem'].includes(t.name)) return;
+    e.stopImmediatePropagation(); if (a.busy) return;
+    if (t.name === 'edsx-step') {
+      a.step_seqs = [...$('edsx-steps').querySelectorAll('input:checked')].map(x => x.value);
+      a.step_seq = a.step_seqs[0] || '';
+    } else if (t.name === 'edsx-meas44') {
+      a.meas_types = [...$('edsx-meas-types').querySelectorAll('input:checked')].map(x => x.value);
+      a.meas_types = t.value === 'ALL' && t.checked ? ['ALL'] : a.meas_types.filter(x => x !== 'ALL');
+      a.meas_type = a.meas_types[0] || '';
+    } else a.subitem = t.value;
+    a.selected_columns = null; edsxInvalidate();
+    if (a.step_seq) void load('eds', true);
+    else {stopRequest('eds', 'STEP 선택 해제'); footer('eds');}
+  }, true);
+  // Capture replaces previously bound listeners, so a click cannot submit twice.
+  document.addEventListener('click', e => {
+    const button = e.target.closest('button'); if (!button) return;
+    const kind = button.dataset.retry51 || (button.id === 'quick-preview-button' ? 'quick' : button.id === 'edsx-preview-button' ? 'eds' : null);
+    if (!kind) return;
+    e.preventDefault(); e.stopImmediatePropagation(); if (button.disabled) return;
+    if (button.dataset.retry51) void load(kind, true); else void preview(kind);
+  }, true);
+  for (const [kind, id] of [['quick','quick-dialog'],['eds','eds-extract-dialog']]) {
+    $(id).addEventListener('close', () => {stopRequest(kind, '입력창을 닫았습니다.'); const a = stateOf(kind); if (a) a.optionsKey51 = null;});
+    $(id).addEventListener('input', e => e.target.removeAttribute('aria-invalid'));
+  }
+  window.DataTalkQuickExtract51 = {version:'5.1',metadataTimeoutMs:TIMEOUT};
+})();
+/* DataTalk 5.1r2: one validated MSR catalogue for typed input and checkboxes. */
+(() => {
+  'use strict';
+  const original = {payload:edsxPayload, footer:edsxRenderFooter, metadata:edsxRenderMetadata,
+    error:edsxLocalError, numbers:edsxRenderNumbers, typed:renderTyped44};
+  function parse(text) {
+    let s=String(text??'').normalize('NFKC').trim().toLowerCase(),values=[],errors=[];
+    const fail=m=>({values:[],errors:[m],duplicates:0,all:false});
+    if(s.length>12000)return fail('번호 입력이 너무 깁니다.');
+    if(!s)return {values,errors,duplicates:0,all:false};
+    s=s.replace(/\s*(?:선택해줘|선택해\s*줘|뽑아줘|뽑아\s*줘|추출해줘|추출해\s*줘|보여줘|보여\s*줘|선택|추출|조회|주세요|줘)\s*[.!]?$/,'').trim();
+    if(/^(?:all|전체|모두)(?:\s*(?:번호|측정값|측정|컬럼|항목))?$/.test(s))return {values,errors,duplicates:0,all:true};
+    s=s.replace(/(?:msr\s*_\s*|측정\s*(?:컬럼\s*)?번호\s*:?\s*|번호\s*:?\s*)/g,'')
+      .replace(/(\d)\s*번/g,'$1').replace(/(\d)\s*부터\s*(\d+)\s*까지/g,'$1-$2')
+      .replace(/\s*(?:,|;|\n|\t|및|하고|와|과|랑|이랑)\s*/g,' ')
+      .replace(/(\d)\s*(?:~|-|–|—)\s*(\d)/g,'$1-$2').replace(/\s*(?:만|을|를)$/,'').trim();
+    if(!s)return fail('예: 1, 3, 7 또는 1부터 5까지');
+    for(const token of s.split(/\s+/)){
+      const m=/^(\d{1,3})(?:-(\d{1,3}))?$/.exec(token);
+      if(!m)return fail('번호만 입력해 주세요. 예: 1, 3, 7 / msr_001 / 1부터 5까지. 제외·조건 문장은 자동 추측하지 않습니다.');
+      const lo=Number(m[1]),hi=m[2]?Number(m[2]):lo;
+      if(lo>hi||hi>499)return fail('측정 번호는 0~499이며 범위는 작은 번호부터 입력하세요.');
+      for(let n=lo;n<=hi;n++)values.push(n);
+    }
+    const unique=[...new Set(values)];return {values:unique,errors,duplicates:values.length-unique.length,all:false};
+  }
+  const catalogue=a=>edsxMetadata(a).msr_catalog;
+  const groupTypes=a=>[...new Set((catalogue(a)?.groups||[]).map(g=>g.scope.meas_type))];
+  const textFor=(a,t)=>a.numberSelections?.[t]??a.numbersText??'';
+  function members(a,t){
+    const groups=(catalogue(a)?.groups||[]).filter(g=>g.scope.meas_type===t);
+    const union=new Map();for(const g of groups)for(const i of g.items)if(!union.has(i.number))union.set(i.number,i);
+    return [...union.values()].map(i=>({...i,common:groups.every(g=>g.items.some(x=>x.number===i.number))}));
+  }
+  function inputError(a,t){
+    const p=parse(textFor(a,t));if(p.errors.length)return p.errors[0];
+    if(p.all)return '';
+    const allowed=new Set(members(a,t).filter(i=>i.common).map(i=>i.number)),missing=p.values.filter(n=>!allowed.has(n));
+    if(missing.length)return '현재 선택 조건에 공통으로 등록되지 않은 번호: '+missing.map(n=>'msr_'+String(n).padStart(3,'0')).join(', ');
+    return '';
+  }
+  function setText(a,t,value){
+    a.numberSelections??={};a.numberSelections[t]=value;
+    if(groupTypes(a).length===1){a.numbersText=value;$('edsx-numbers').value=value;}
+    a.previewCatalogToken51=null;a.selected_columns=null;edsxInvalidate();render();
+  }
+  function render(){
+    const a=edsxUI;if(!a)return;
+    let host=$('msr-picker51');
+    if(!host){host=document.createElement('div');host.id='msr-picker51';$('edsx-number-chips').after(host);}
+    const cat=catalogue(a),types=groupTypes(a),active=edsxIsMeasurement(a)&&a.table!=='EDS_CHIP_BIN';
+    host.hidden=!active;
+    if(!active)return;
+    $('edsx-number-chips').hidden=true;$('edsx-columns-preview').hidden=true;
+    $('edsx-columns-preview').closest('details').hidden=true;
+    const hint=$('edsx-numbers').previousElementSibling;if(hint?.tagName==='P')hint.textContent='숫자·범위로 입력하거나 아래 목록에서 선택하세요.';
+    $('edsx-typed44')?.setAttribute('hidden','');
+    $('edsx-numbers').hidden=types.length!==1;
+    if(types.length===1){
+      a.numbersText=textFor(a,types[0]);
+      if(document.activeElement!==$('edsx-numbers'))$('edsx-numbers').value=a.numbersText;
+    }
+    $('edsx-numbers').placeholder='예: 1, 3, 7 / msr_001 / 1부터 5까지';
+    $('edsx-number-all').textContent='ALL · 등록 항목 전체';
+    if(!cat||cat.status!=='ready'){
+      host.dataset.layout='';host.innerHTML='<p class="edsx-small">'+esc(a.loading?'등록된 측정 항목을 불러오는 중입니다.':cat?.status==='empty'?'등록된 측정 항목이 0개입니다.':cat?.status==='pending'?'제품·STEP·측정 유형을 선택하면 목록이 표시됩니다.':'유효 MSR 매핑을 연결하면 체크박스 목록이 표시됩니다.')+'</p>';
+      $('edsx-number-count').textContent='목록 확인 필요';return;
+    }
+    const key=JSON.stringify(types);
+    if(host.dataset.layout!==key){
+      host.dataset.layout=key;host.replaceChildren();
+      for(const t of types){
+        const card=document.createElement('section');card.className='msr-card51';card.dataset.msrType=t;
+        card.innerHTML='<div class="msr-top51"><strong>'+esc(t)+'</strong><span data-msr-count></span></div>'
+          +(types.length>1?'<textarea data-msr-text aria-label="'+esc(t)+' 측정 번호" placeholder="예: 1, 3, 7 / 1부터 5까지"></textarea>':'')
+          +'<div class="msr-tools51"><input data-msr-filter type="search" aria-label="'+esc(t)+' 측정 항목 검색" placeholder="번호·이름·설명 검색"><button type="button" data-msr-action="filtered">검색 결과 선택</button><button type="button" data-msr-action="clear">해제</button></div>'
+          +'<div class="msr-list51" role="group" aria-label="'+esc(t)+' 측정 컬럼 목록"></div><div class="msr-feedback51" aria-live="polite"></div>';
+        host.append(card);
+      }
+    }
+    let total=0,allCount=0;
+    for(const card of host.children){
+      const t=card.dataset.msrType,p=parse(textFor(a,t)),items=members(a,t),selected=new Set(p.all?items.map(i=>i.number):p.values);
+      const text=card.querySelector('[data-msr-text]');if(text&&document.activeElement!==text)text.value=textFor(a,t);
+      const q=card.querySelector('[data-msr-filter]').value.trim().toLowerCase();
+      const shown=items.filter(i=>!q||(i.label+' '+i.column+' '+i.description+' '+i.number).toLowerCase().includes(q));
+      const count=p.all?items.length:p.values.length;total+=count;if(p.all)allCount++;
+      card.querySelector('[data-msr-count]').textContent=(p.all?'ALL · ':'')+count+'개 선택 / 등록 '+items.length+'개';
+      const list=card.querySelector('.msr-list51'),scroll=list.scrollTop,focused=list.contains(document.activeElement)?document.activeElement.dataset.msrNumber:null;
+      list.innerHTML=shown.map(i=>'<label title="'+esc((i.description||i.column)+(i.common?'':' · 선택 STEP 간 공통 항목이 아닙니다. STEP을 좁히거나 ALL을 사용하세요.'))+'"><input type="checkbox" data-msr-number="'+i.number+'" '+(selected.has(i.number)?'checked':'')+' '+(!i.common||a.loading||a.busy?'disabled':'')+'><span>'+esc(i.label)+'</span></label>').join('')||'<span class="edsx-small">검색 결과가 없습니다.</span>';
+      list.scrollTop=scroll;if(focused!==null)list.querySelector('[data-msr-number="'+focused+'"]')?.focus({preventScroll:true});
+      card.querySelector('.msr-feedback51').textContent=inputError(a,t)||(p.all?'ALL은 검색어와 관계없이 등록된 항목 전체입니다.':p.duplicates?'중복 '+p.duplicates+'개를 한 번만 선택합니다.':'');
+      card.querySelector('[data-msr-action="filtered"]').disabled=!!a.busy||!!a.loading||!shown.some(i=>i.common)||!!inputError(a,t);
+    }
+    $('edsx-number-count').textContent=total+'개 선택'+(allCount?' · ALL 적용':'');
+    $('edsx-summary').textContent=[a.schema,(a.step_seqs||[a.step_seq]).join('·'),types.join('·'),a.table==='EDS_WF_MSR'?a.subitem:'',total+'개 측정 컬럼'+(allCount?' · ALL':'')].filter(Boolean).join(' · ');
+    $('edsx-number-error').textContent='';
+  }
+  edsxParseNumbers=parse;window.DataTalkEDSForms.parseNumbers=parse;
+  renderTyped44=function(){original.typed();render();};
+  edsxRenderNumbers=()=>render();
+  edsxRenderMetadata=function(){original.metadata();$('edsx-help44')?.querySelector('details')?.removeAttribute('open');render();};
+  function afterFooter(a){
+    if(!a)return;
+    const cat=catalogue(a),ready=cat?.status==='ready';
+    $('edsx-number-all').disabled=!!a.busy||!!a.loading||!ready;
+    $('edsx-number-all').title=ready?'선택 조건에 등록된 유효 항목 전체. 검색 필터와 무관합니다.':'유효 MSR 목록을 먼저 확인하세요.';
+    if(edsxIsMeasurement(a)&&!ready)$('edsx-plan-button').disabled=true;
+    render();
+    // Legacy footer enables every field; reapply catalogue-specific restrictions.
+    if(a.busy||a.loading)for(const el of $('msr-picker51')?.querySelectorAll('input,textarea,button')||[])el.disabled=true;
+  }
+  edsxRenderFooter=()=>original.footer();
+  function mappingError(a){
+    if(!edsxIsMeasurement(a))return '';
+    if(catalogue(a)?.status!=='ready')return '유효 MSR 목록을 먼저 불러와 주세요. 매핑 연결 상태를 확인하세요.';
+    for(const t of groupTypes(a)){const e=inputError(a,t);if(e)return e;const p=parse(textFor(a,t));if(!p.all&&!p.values.length)return t+' 측정 번호를 선택하거나 ALL을 눌러 주세요.';}
+    return '';
+  }
+  edsxLocalError=a=>original.error(a)||mappingError(a);
+  edsxPayload=function(a=edsxUI){
+    const b=original.payload(a),cat=catalogue(a);
+    if(edsxIsMeasurement(a)&&cat?.status==='ready'){
+      b.measurements=groupTypes(a).map(t=>{const p=parse(textFor(a,t));return {meas_type:t,numbers:p.all?'ALL':p.values};});
+      b.msr_catalog_token=a.preview?.msr_catalog_token||cat.token;
+    }
+    return b;
+  };
+  const dialog=$('eds-extract-dialog');
+  dialog.addEventListener('input',e=>{
+    const a=edsxUI,t=e.target,card=t.closest('[data-msr-type]');if(!a)return;
+    if(t.matches('[data-msr-filter]')){e.stopImmediatePropagation();render();return;}
+    if(t.id==='edsx-numbers'||t.matches('[data-msr-text]')){
+      e.stopImmediatePropagation();if(a.busy)return;
+      const typ=card?.dataset.msrType||groupTypes(a)[0];if(typ)setText(a,typ,t.value);
+    }
+  },true);
+  dialog.addEventListener('change',e=>{
+    const t=e.target;if(!t.matches('[data-msr-number]'))return;
+    e.stopImmediatePropagation();const a=edsxUI;if(!a||a.busy||a.loading)return;
+    const typ=t.closest('[data-msr-type]').dataset.msrType,p=parse(textFor(a,typ));
+    if(p.errors.length){edsxUI.error=p.errors[0];edsxRenderFooter();return;}
+    if(p.all&&members(a,typ).some(i=>!i.common)){
+      a.error='STEP별 등록 번호가 다릅니다. STEP을 한 개 선택하거나 해제 후 공통 번호를 선택해 주세요.';edsxRenderFooter();return;
+    }
+    const values=new Set(p.all?members(a,typ).filter(i=>i.common).map(i=>i.number):p.values);
+    t.checked?values.add(Number(t.dataset.msrNumber)):values.delete(Number(t.dataset.msrNumber));
+    setText(a,typ,[...values].sort((a,b)=>a-b).join(', '));
+  },true);
+  dialog.addEventListener('click',e=>{
+    const button=e.target.closest('button'),a=edsxUI;if(!button||!a)return;
+    if(!button.dataset.msrAction&&!['edsx-number-all','edsx-number-clear'].includes(button.id))return;
+    e.preventDefault();e.stopImmediatePropagation();if(button.disabled||a.busy||a.loading)return;
+    if(button.id==='edsx-number-all'||button.id==='edsx-number-clear'){
+      for(const t of groupTypes(a))setText(a,t,button.id==='edsx-number-all'?'ALL':'');
+      return;
+    }
+    const card=button.closest('[data-msr-type]'),typ=card.dataset.msrType;
+    if(button.dataset.msrAction==='clear'){setText(a,typ,'');return;}
+    const p=parse(textFor(a,typ));if(p.all)return;
+    const values=new Set(p.values);for(const check of card.querySelectorAll('[data-msr-number]:not(:disabled)'))values.add(Number(check.dataset.msrNumber));
+    setText(a,typ,[...values].sort((a,b)=>a-b).join(', '));
+  },true);
+  const style=document.createElement('style');style.textContent=`
+  .msr-card51{border:1px solid #d9e1ef;border-radius:9px;padding:8px;margin-top:7px;min-width:0}
+  .msr-top51,.msr-tools51{display:flex;gap:6px;align-items:center;flex-wrap:wrap}.msr-top51{justify-content:space-between;font-size:13px;margin-bottom:6px}
+  .msr-tools51 input{flex:1;min-width:110px}.msr-tools51 button{font-size:12px;padding:6px 8px}
+  #eds-extract-dialog .msr-card51 textarea{height:48px;min-height:44px;margin-bottom:6px}
+  .msr-list51{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:4px;max-height:144px;overflow:auto;margin-top:7px}
+  .msr-list51 label{display:flex;align-items:center;gap:6px;padding:5px;background:#f6f8fc;border-radius:5px;font:13px var(--mono);cursor:pointer}
+  .msr-list51 input{width:16px;height:16px;flex:none}.msr-list51 label:has(input:disabled){opacity:.6;cursor:default}
+  .msr-feedback51{font-size:12px;color:var(--muted);margin-top:5px;overflow-wrap:anywhere}
+  #edsx-help44 details:not([open]){margin-bottom:5px}`;
+  document.head.append(style);
+  window.DataTalkMSR51={parse,render,validate:mappingError,afterFooter,version:'5.1r2'};
+})();
+
 DataTalkVisuals.init({model,$,api,uuid,apply,render,fail,toast,showResult,dateLabel,openTableTypes,setCacheStatus:acceptCacheBudgetStatus,onGraphDataOutcome:recordGraphDataOutcome,onGraphFiltersChanged:clearLinkedSelection});
 
 // Offline fixture adapter for presentation only. Production rendering and UI styling are retained.
